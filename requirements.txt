@@ -1,4 +1,3 @@
 streamlit
-docx
-pythoncom
-win32com
+python-docx
+pywin32
