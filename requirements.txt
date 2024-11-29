@@ -1,4 +1,4 @@
 streamlit
 python-docx
 pywin32; platform_system == "Windows"
-pythoncom
+pywin32.pythoncom
