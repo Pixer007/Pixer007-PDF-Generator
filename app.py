@@ -1,90 +1,99 @@
+import os
 import streamlit as st
-from fpdf import FPDF
-from datetime import datetime
+from docx import Document
+import pythoncom
+from win32com import client  # pip install pywin32
 
-class NDA_PDF(FPDF):
-    def header(self):
-        # Add company header
-        self.set_font("Arial", "B", 12)
-        self.cell(0, 10, "AppSynergies Pvt Ltd", ln=True, align="L")
-        self.set_font("Arial", size=10)
-        self.multi_cell(0, 5, "D-1602, Orchid Suburbia,\nLink Road, Kandivali West,\nMumbai 400067", align="L")
-        self.ln(5)
 
-    def footer(self):
-        # Add footer
-        self.set_y(-15)
-        self.set_font("Arial", size=10)
-        self.cell(0, 10, "Contact: info@appsynergies.com | +91-9967067419", align="C")
-
-    def add_section(self, title, content):
-        # Add section with title and content
-        self.set_font("Arial", "B", 12)
-        self.cell(0, 10, title, ln=True)
-        self.set_font("Arial", size=12)
-        self.multi_cell(0, 10, content)
-        self.ln(5)
-
-def generate_nda_pdf(client_name, client_address, nda_type):
-    pdf = NDA_PDF()
-    pdf.add_page()
-
-    # Title
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "NON-DISCLOSURE AGREEMENT", ln=True, align="C")
-    pdf.ln(10)
-
-    # Intro Section
-    today_date = datetime.now().strftime("%B %d, %Y")
-    intro = f"""
-This Non-Disclosure Agreement executed on {today_date}, is entered into by and between:
-1. {client_name} with the address of {client_address} ("Party A").
-2. AppSynergies Pvt Ltd, D-1602, Orchid Suburbia, Link Road, Kandivali West, Mumbai 400067 ("Party B").
-
-AppSynergies and {client_name} may be referred to collectively as the "Parties".
+def replace_placeholders(template_path, replacements):
     """
-    pdf.add_section("Introduction:", intro)
-
-    # Type of Agreement
-    pdf.add_section("Type of Agreement:", f"The Agreement is {nda_type.upper()}.")
-
-    # Confidentiality Definition
-    confidentiality = """
-In this Agreement, "Confidential Information" refers to any information with commercial value, including technical and non-technical data, financial details, customer lists, or any proprietary details shared by either party.
+    Replace placeholders in the Word template with user inputs while preserving formatting.
     """
-    pdf.add_section("Definition of Confidentiality:", confidentiality)
+    doc = Document(template_path)
 
-    # Obligations
-    obligations = """
-The Parties shall maintain strict confidentiality and shall not disclose any information without prior written consent. All shared records must be returned upon request.
+    for paragraph in doc.paragraphs:
+        for placeholder, value in replacements.items():
+            if placeholder in paragraph.text:
+                paragraph.text = paragraph.text.replace(placeholder, value)
+
+    return doc
+
+
+def save_word_as_pdf(word_path, pdf_path):
     """
-    pdf.add_section("Obligations:", obligations)
+    Convert a Word document to a PDF using Microsoft Word for perfect formatting.
+    """
+    pythoncom.CoInitialize()  # Initialize COM for multithreading (required by Streamlit)
+    try:
+        # Open Word application
+        word = client.Dispatch("Word.Application")
+        word.Visible = False  # Run Word in the background
 
-    # Term
-    pdf.add_section("Term:", "The confidentiality obligations shall remain in effect for 3 years or until written release by the disclosing party.")
+        # Open the Word document
+        doc = word.Documents.Open(word_path)
 
-    # Signatures
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, "Signatures:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, f"Party A: {client_name}", ln=True)
-    pdf.cell(0, 10, "Party B: Sneha Shukla, AppSynergies Pvt Ltd", ln=True)
+        # Save as PDF
+        doc.SaveAs(pdf_path, FileFormat=17)  # 17 = PDF format
+        doc.Close()
+        word.Quit()
+    except Exception as e:
+        raise RuntimeError(f"Error during Word to PDF conversion: {e}")
 
-    # Save PDF
-    file_name = f"NDA_{client_name.replace(' ', '_')}.pdf"
-    pdf.output(file_name)
-    return file_name
 
-# Streamlit App
-st.title("NDA Generator")
-nda_type = st.selectbox("Select NDA Type", ["India", "ROW"])
-client_name = st.text_input("Enter Client Name")
-client_address = st.text_area("Enter Client Address")
+def main():
+    st.title("Automated NDA PDF Generator")
+    st.write("Fill in the details below to generate a customized NDA PDF.")
 
-if st.button("Generate NDA"):
-    if not client_name or not client_address:
-        st.error("Please fill in all fields.")
-    else:
-        pdf_file = generate_nda_pdf(client_name, client_address, nda_type)
-        with open(pdf_file, "rb") as file:
-            st.download_button("Download NDA PDF", file, file_name=pdf_file, mime="application/pdf")
+    # User inputs
+    name = st.text_input("Enter Full Name")
+    email = st.text_input("Enter Email")
+    phone = st.text_input("Enter Phone Number")
+    address = st.text_area("Enter Address (multi-line allowed)")
+
+    # Paths for template and output files
+    template_path = os.path.abspath("NDA Template - INDIA 3.docx")  # Predefined common template
+    output_docx = os.path.abspath("updated_template.docx")
+    output_pdf = os.path.abspath("generated_nda.pdf")
+
+    if st.button("Generate PDF"):
+        if not os.path.exists(template_path):
+            st.error("Template file not found. Please ensure 'template.docx' is in the working directory.")
+            return
+
+        if not (name and email and phone and address):
+            st.error("Please fill in all the fields!")
+            return
+
+        try:
+            # Define the placeholder replacements
+            replacements = {
+                "Client Name": name,
+                "Client Email": email,
+                "Client Phone": phone,
+                "Client Address": address,
+            }
+
+            # Replace placeholders in the template
+            updated_doc = replace_placeholders(template_path, replacements)
+            updated_doc.save(output_docx)  # Save updated Word document
+
+            # Convert the updated Word document to PDF
+            save_word_as_pdf(output_docx, output_pdf)
+
+            # Provide the download link for the PDF
+            with open(output_pdf, "rb") as pdf_file:
+                st.download_button(
+                    label="Download NDA PDF",
+                    data=pdf_file,
+                    file_name="generated_nda.pdf",
+                    mime="application/pdf",
+                )
+
+        except RuntimeError as re:
+            st.error(f"Word-to-PDF Conversion Error: {re}")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+
+
+if __name__ == "__main__":
+    main()
