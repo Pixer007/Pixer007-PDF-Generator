@@ -1,4 +1,5 @@
 streamlit
 python-docx
-pywin32; platform_system == "Windows"
-pywin32.pythoncom
+docx
+datetime
+io
